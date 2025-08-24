@@ -1,0 +1,743 @@
+#!/usr/bin/env python3
+"""
+Textual TUI CSV → YouTube Audio Downloader (uv + venv bootstrap)
+
+Features
+- Creates a uv-managed .venv and installs: textual (latest), yt-dlp (latest), imageio-ffmpeg (ffmpeg binary)
+- Intelligent CSV scanning to detect Artist / Track columns (with manual override)
+- Synchronous search (one-by-one) and highest-quality audio-only downloads to ./Music
+- Progress bars, logs, dry-run mode, cancel/resume, result export
+
+Run:
+    python musicdl.py
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import textwrap
+import threading
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+# ---------- Bootstrap: ensure uv venv + dependencies ----------
+BASE_DIR = Path(__file__).resolve().parent
+VENV_DIR = BASE_DIR / ".venv"
+
+REQUIRED_PACKAGES = [
+    # Pin Textual to major == 5, allow latest patch; keep fresh automatically.
+    "textual>=5.3,<6.0",
+    # Always pull newest yt-dlp so YouTube changes are handled.
+    "yt-dlp>=2025.0.0",
+    # Bundles an ffmpeg binary and exposes get_ffmpeg_exe()
+    "imageio-ffmpeg>=0.4.9",
+]
+
+
+def _venv_python(venv: Path) -> Path:
+    if os.name == "nt":
+        return venv / "Scripts" / "python.exe"
+    return venv / "bin" / "python"
+
+
+def ensure_uv_and_bootstrap_venv():
+    """Create .venv with uv and install requirements. Re-exec inside venv."""
+    # Short-circuit if we're already running from the target venv interpreter
+    inside_target = (
+        VENV_DIR.exists()
+        and Path(sys.executable).resolve() == _venv_python(VENV_DIR).resolve()
+    )
+    if inside_target:
+        return
+
+    uv = shutil.which("uv")
+    if not uv:
+        msg = (
+            textwrap.dedent("""
+        [ FATAL ] The 'uv' tool is required but not found on PATH.
+
+        Install uv:
+          - macOS/Linux:  curl -LsSf https://astral.sh/uv/install.sh | sh
+          - Windows (PowerShell as Admin):
+                iwr https://astral.sh/uv/install.ps1 | iex
+
+        Then re-run:  python {script}
+        """)
+            .strip()
+            .format(script=Path(__file__).name)
+        )
+        print(msg, file=sys.stderr)
+        sys.exit(1)
+
+    # Create project venv (default .venv in cwd) if missing
+    if not VENV_DIR.exists():
+        subprocess.run([uv, "venv"], cwd=str(BASE_DIR), check=True)
+
+    py = str(_venv_python(VENV_DIR))
+    # Install / upgrade required packages into that venv
+    # Use --python to target the venv explicitly (per uv docs).
+    cmd = [uv, "pip", "install", "--python", py, "--upgrade", *REQUIRED_PACKAGES]
+    subprocess.run(cmd, check=True)
+
+    # Re-exec this script with the venv's Python interpreter
+    os.execv(py, [py, str(Path(__file__).resolve()), *sys.argv[1:]])
+
+
+# Kick off bootstrap if needed
+ensure_uv_and_bootstrap_venv()
+
+# ---------- Now we're inside the venv: safe to import app deps ----------
+# Textual 5.x API
+# yt-dlp + ffmpeg path
+import imageio_ffmpeg  # provides get_ffmpeg_exe()
+from textual import on
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
+from textual.reactive import reactive
+from textual.widgets import (
+    Button,
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    Label,
+    Log,
+    ProgressBar,
+    Select,
+    Static,
+    Switch,
+)
+from yt_dlp import YoutubeDL
+from yt_dlp.utils import sanitize_filename
+
+# ---------- CSV Intelligence ----------
+ARTIST_SYNONYMS = {
+    "artist",
+    "artists",
+    "primary artist",
+    "main artist",
+    "lead artist",
+    "performer",
+    "band",
+    "singer",
+    "vocalist",
+    "composer",
+    "author",
+    "musician",
+    "artist name",
+    "album artist",
+    "primary",
+    "group",
+}
+TRACK_SYNONYMS = {
+    "track",
+    "track name",
+    "song",
+    "song name",
+    "title",
+    "recording",
+    "work",
+    "composition",
+    "piece",
+    "single",
+    "name",
+}
+
+SEPARATORS = [" - ", " — ", " – ", "-", "—", "–", ":", "|", "·"]
+
+
+@dataclass
+class CSVDetection:
+    headers: List[str]
+    artist_col: Optional[str]
+    track_col: Optional[str]
+    single_title_col: Optional[str]
+    dialect: csv.Dialect
+    preview_rows: List[Dict[str, str]]
+
+
+def sniff_csv(path: Path, sample_bytes: int = 64 * 1024) -> Tuple[bool, csv.Dialect]:
+    with path.open("rb") as f:
+        raw = f.read(sample_bytes)
+    buf = raw.decode("utf-8-sig", errors="replace")
+    sniffer = csv.Sniffer()
+    try:
+        has_header = sniffer.has_header(buf)
+    except Exception:
+        has_header = True
+    try:
+        dialect = sniffer.sniff(buf, delimiters=[",", ";", "\t", "|"])
+    except Exception:
+
+        class DefaultDialect(csv.Dialect):
+            delimiter = ","
+            doublequote = True
+            escapechar = None
+            lineterminator = "\n"
+            quotechar = '"'
+            quoting = csv.QUOTE_MINIMAL
+            skipinitialspace = True
+
+        dialect = DefaultDialect()
+    return has_header, dialect
+
+
+def load_csv(path: Path, max_preview: int = 200) -> CSVDetection:
+    has_header, dialect = sniff_csv(path)
+    headers: List[str] = []
+    rows: List[Dict[str, str]] = []
+
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        reader: Iterable
+        if has_header:
+            reader = csv.DictReader(f, dialect=dialect)
+            headers = list(reader.fieldnames or [])
+        else:
+            # Build fake headers based on first row width
+            plain = csv.reader(f, dialect=dialect)
+            first = next(plain)
+            headers = [f"col_{i + 1}" for i in range(len(first))]
+            rows.append({h: v for h, v in zip(headers, first)})
+            reader = (dict(zip(headers, r)) for r in plain)
+
+        for i, record in enumerate(reader):
+            rows.append({k: (v or "").strip() for k, v in record.items()})
+            if i + 1 >= max_preview:
+                break
+
+    # Heuristic header scoring
+    def score_header(name: str, syns: set[str]) -> int:
+        n = name.strip().lower()
+        score = 0
+        for s in syns:
+            if s in n:
+                score += max(1, len(s) // 6)
+        if re.search(r"\bartist\b", n):
+            score += 2
+        if re.search(r"\btitle\b|\btrack\b|\bsong\b", n):
+            score += 2
+        return score
+
+    header_scores = {
+        h: (score_header(h, ARTIST_SYNONYMS), score_header(h, TRACK_SYNONYMS))
+        for h in headers
+    }
+    # Pick best artist/track by header similarity
+    best_artist = None
+    best_artist_score = -1
+    best_track = None
+    best_track_score = -1
+    for h in headers:
+        a, t = header_scores[h]
+        if a > best_artist_score:
+            best_artist, best_artist_score = h, a
+        if t > best_track_score:
+            best_track, best_track_score = h, t
+
+    # If not confident, try value-based detection
+    def value_stats(col: str) -> Tuple[int, int]:
+        values = [r.get(col, "") for r in rows]
+        nonempty = [v for v in values if v]
+        avg_len = int(sum(len(v) for v in nonempty) / max(1, len(nonempty)))
+        unique = len(set(nonempty))
+        return avg_len, unique
+
+    if best_artist_score <= 0 or best_track_score <= 0:
+        # detect single column with "Artist - Title" pattern
+        candidate_single = None
+        candidate_hits = -1
+        for h in headers:
+            hits = 0
+            for r in rows:
+                val = r.get(h) or ""
+                if any(sep in val for sep in SEPARATORS):
+                    hits += 1
+            if hits > candidate_hits:
+                candidate_hits = hits
+                candidate_single = h
+        if candidate_hits > 0:
+            return CSVDetection(headers, None, None, candidate_single, dialect, rows)
+
+    # sanity check: avoid same column for both
+    if best_artist == best_track:
+        # try second best for track
+        second_best = None
+        second_score = -1
+        for h in headers:
+            if h == best_artist:
+                continue
+            s = header_scores[h][1]
+            if s > second_score:
+                second_best, second_score = h, s
+        if second_best:
+            best_track = second_best
+
+    return CSVDetection(headers, best_artist, best_track, None, dialect, rows)
+
+
+def parse_artist_title_from_single(value: str) -> Tuple[str, str]:
+    v = (value or "").strip()
+    for sep in SEPARATORS:
+        if sep in v:
+            parts = [p.strip() for p in v.split(sep, 1)]
+            if len(parts) == 2:
+                return parts[0], parts[1]
+    # fallback: try quotes
+    m = re.match(r'^(.*?)["“](.+?)["”]$', v)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    # otherwise assume it's the title only
+    return "", v
+
+
+def sanitize_filename_hard(s: str) -> str:
+    # yt-dlp's sanitize helps, but we also prevent nested dirs etc.
+    s = sanitize_filename(s, restricted=True)
+    return re.sub(r"[\\/:*?\"<>|\n\r\t]+", "_", s).strip("_ .")
+
+
+# ---------- Download Core (sequential) ----------
+@dataclass
+class TrackItem:
+    artist: str
+    title: str
+    query: str
+    target_stub: str  # without extension
+    status: str = "pending"
+    url: Optional[str] = None
+    result_path: Optional[str] = None
+    error: Optional[str] = None
+
+
+class YTDLPDownloader:
+    def __init__(
+        self, music_dir: Path, ffmpeg_path: Optional[str] = None, app_logger=None
+    ) -> None:
+        self.music_dir = music_dir
+        self.ffmpeg_path = ffmpeg_path or imageio_ffmpeg.get_ffmpeg_exe()
+        self.app_logger = app_logger
+
+    def _log(self, msg: str):
+        if self.app_logger:
+            self.app_logger(msg)
+        else:
+            print(msg)
+
+    def find_and_download(self, item: TrackItem, dry_run: bool = False) -> TrackItem:
+        # Build a deterministic filename from CSV artist/title
+        base_name = f"{item.artist} - {item.title}".strip(" -")
+        safe_stub = sanitize_filename_hard(
+            base_name or item.title or item.artist or "audio"
+        )
+        outtmpl = str(self.music_dir / f"{safe_stub}.%(ext)s")
+
+        ydl_common = {
+            "quiet": True,
+            "noprogress": True,
+            "noplaylist": True,
+            "default_search": "ytsearch",
+            "ffmpeg_location": str(self.ffmpeg_path),
+            "format": "bestaudio/best",
+            # Avoid re-encoding: copy audio container if possible.
+            "postprocessors": [
+                {"key": "FFmpegCopyAudio"},
+                {"key": "FFmpegMetadata"},
+            ],
+            "outtmpl": {"default": outtmpl},
+            "overwrites": True,
+            "ignoreerrors": False,
+        }
+
+        query = f"ytsearch1:{item.query}"
+        try:
+            with YoutubeDL(ydl_common) as ydl:
+                self._log(f"[search] {item.query}")
+                info = ydl.extract_info(query, download=not dry_run)
+                # extract URL for card/bookkeeping
+                if info and "entries" in info and info["entries"]:
+                    entry = info["entries"][0]
+                else:
+                    entry = info
+                if not entry:
+                    raise RuntimeError("No search results")
+                item.url = entry.get("webpage_url") or entry.get("url")
+                if not dry_run:
+                    # When download=True above, file should be present at outtmpl
+                    # Try to compute final extension if possible
+                    ext = entry.get("ext") or entry.get("acodec") or "m4a"
+                    # Find the actual file by glob, since ext may differ (opus/m4a/webm)
+                    matched = list(self.music_dir.glob(f"{safe_stub}.*"))
+                    if matched:
+                        item.result_path = str(matched[0])
+                item.status = "done" if not dry_run else "found"
+        except Exception as e:
+            item.status = "error"
+            item.error = str(e)
+            self._log(f"[error] {item.query}: {e}")
+        return item
+
+
+# ---------- Textual UI ----------
+HELP_MD = """
+[b]CSV → YouTube Audio Downloader[/b]
+
+[i]Steps[/i]
+1. Enter a CSV path and hit [b]Scan[/b].
+2. Verify detected columns (Artist / Track). Adjust if needed.
+3. Toggle [b]Dry Run[/b] to only search without downloading.
+4. Hit [b]Start[/b] to process sequentially. Use [b]Stop[/b] to cancel.
+
+Files download to [b]./Music[/b]
+"""
+
+
+class StatusBar(Static):
+    def set_text(self, msg: str):
+        self.update(msg)
+
+
+class MusicDownloaderApp(App):
+    CSS = """
+    Screen {
+        layout: vertical;
+    }
+    #topbar {
+        height: 3;
+        background: $surface;
+        padding: 0 1;
+        content-align: left middle;
+    }
+    #controls {
+        height: 5;
+        background: $boost;
+        padding: 0 1;
+    }
+    #main {
+        height: 1fr;
+    }
+    #left, #right {
+        border: solid $accent 10%;
+        padding: 1;
+    }
+    #left {
+        width: 58%;
+    }
+    #right {
+        width: 42%;
+    }
+    #log {
+        height: 1fr;
+    }
+    .pill {
+        margin-right: 2;
+    }
+    #progress {
+        height: 3;
+        dock: bottom;
+        padding: 0 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("ctrl+o", "focus_path", "Open CSV"),
+        Binding("ctrl+s", "scan", "Scan"),
+        Binding("ctrl+r", "start", "Start"),
+        Binding("ctrl+c", "cancel", "Stop"),
+        Binding("ctrl+d", "toggle_dry", "Dry Run"),
+        Binding("ctrl+q", "quit", "Quit"),
+    ]
+
+    csv_path = reactive("", layout=True)
+    detected: CSVDetection | None = None
+    rows: List[Dict[str, str]] = reactive([], layout=False)
+    tasks: List[TrackItem] = reactive([], layout=False)
+    running = reactive(False)
+    dry_run = reactive(False)
+    _worker = None
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.music_dir = BASE_DIR / "Music"
+        self.music_dir.mkdir(exist_ok=True)
+        # Resolve ffmpeg path from imageio-ffmpeg; falls back to PATH if wheel didn't bundle.
+        try:
+            self.ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            self.ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        with Horizontal(id="topbar"):
+            yield Label("CSV Path:", classes="pill")
+            yield Input(placeholder="Path to CSV (drag or paste)", id="path_input")
+            yield Button("Scan", id="scan_btn", variant="primary")
+            yield Static()
+            yield Label("Dry Run", classes="pill")
+            yield Switch(value=False, id="dry_switch")
+            yield Button("Start", id="start_btn", variant="success")
+            yield Button("Stop", id="stop_btn", variant="warning", disabled=True)
+        with Horizontal(id="controls"):
+            yield Label("Artist Column:", classes="pill")
+            yield Select([], id="artist_sel", prompt="— auto —")
+            yield Label("Track Column:", classes="pill")
+            yield Select([], id="track_sel", prompt="— auto —")
+            yield Button("Reload CSV", id="reload_btn")
+            yield Button("Export Results", id="export_btn", disabled=True)
+        with Horizontal(id="main"):
+            with Vertical(id="left"):
+                yield Label("Preview (first 200 rows)")
+                table = DataTable(id="table")
+                table.cursor_type = "row"
+                yield table
+            with Vertical(id="right"):
+                yield Label("Help")
+                help_box = Log(id="help")
+                help_box.write_lines(HELP_MD.splitlines())
+                yield help_box
+                yield Label("Logs")
+                yield Log(id="log")
+        with Horizontal(id="progress"):
+            yield ProgressBar(total=100, show_eta=True, id="pb")
+            yield Label("", id="status")
+        yield Footer()
+
+    # --- Actions / Events ---
+
+    @on(Input.Changed, "#path_input")
+    def on_path_changed(self, ev: Input.Changed):
+        self.csv_path = ev.value.strip()
+
+    @on(Switch.Changed, "#dry_switch")
+    def on_dry_toggle(self, ev: Switch.Changed):
+        self.dry_run = bool(ev.value)
+        self.query_one("#status", Label).update(
+            f"Mode: {'DRY RUN' if self.dry_run else 'DOWNLOAD'}"
+        )
+
+    @on(Button.Pressed, "#scan_btn")
+    def action_scan(self):
+        self._scan_csv()
+
+    @on(Button.Pressed, "#reload_btn")
+    def on_reload(self):
+        # re-scan using selected columns if already set
+        self._scan_csv()
+
+    @on(Button.Pressed, "#start_btn")
+    def on_start(self):
+        if not self.detected or not self.rows:
+            self._log("Load a CSV and verify columns first.")
+            return
+        self._start_downloads()
+
+    @on(Button.Pressed, "#stop_btn")
+    def on_stop(self):
+        self._cancel_worker()
+
+    @on(Button.Pressed, "#export_btn")
+    def on_export(self):
+        if not self.tasks:
+            return
+        out = BASE_DIR / "download_results.json"
+        data = [item.__dict__ for item in self.tasks]
+        out.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        self._log(f"Exported results to {out}")
+
+    def action_focus_path(self):
+        self.query_one("#path_input", Input).focus()
+
+    def action_scan(self):
+        self._scan_csv()
+
+    def action_start(self):
+        self.on_start()
+
+    def action_cancel(self):
+        self._cancel_worker()
+
+    def action_toggle_dry(self):
+        sw = self.query_one("#dry_switch", Switch)
+        sw.value = not sw.value
+
+    # --- Helpers ---
+
+    def _log(self, msg: str):
+        self.query_one("#log", Log).write_line(msg)
+
+    def _status(self, msg: str):
+        self.query_one("#status", Label).update(msg)
+
+    def _progress(self, frac: float):
+        pb = self.query_one("#pb", ProgressBar)
+        pb.progress = int(frac * 100)
+
+    def _scan_csv(self):
+        path_str = self.csv_path or self.query_one("#path_input", Input).value.strip()
+        if not path_str:
+            self._log("Please provide a CSV path.")
+            return
+        path = Path(path_str).expanduser().resolve()
+        if not path.exists():
+            self._log(f"CSV not found: {path}")
+            return
+        try:
+            self.detected = load_csv(path)
+            self.rows = self.detected.preview_rows
+            # Populate header-selects
+            artist_sel = self.query_one("#artist_sel", Select)
+            track_sel = self.query_one("#track_sel", Select)
+            options = [(h, h) for h in self.detected.headers]
+            artist_sel.set_options(options)
+            track_sel.set_options(options)
+            # set detected defaults
+            if self.detected.artist_col:
+                artist_sel.value = self.detected.artist_col
+            if self.detected.track_col:
+                track_sel.value = self.detected.track_col
+            # Render table preview
+            self._populate_table()
+            mode = (
+                "Artist/Track columns detected"
+                if not self.detected.single_title_col
+                else f"Single column mode: {self.detected.single_title_col}"
+            )
+            self._log(f"[scan] {path.name}: {mode} | rows previewed={len(self.rows)}")
+        except Exception as e:
+            self._log(f"[error] Failed to read CSV: {e}")
+
+    def _populate_table(self):
+        table = self.query_one("#table", DataTable)
+        table.clear()
+        # Columns
+        artist_col = (
+            self.query_one("#artist_sel", Select).value or self.detected.artist_col
+        )
+        track_col = (
+            self.query_one("#track_sel", Select).value or self.detected.track_col
+        )
+        single = self.detected.single_title_col if self.detected else None
+
+        cols = []
+        if single:
+            cols = [single]
+        else:
+            if artist_col:
+                cols.append(artist_col)
+            if track_col and track_col != artist_col:
+                cols.append(track_col)
+        if not cols:
+            cols = list(self.detected.headers) if self.detected else []
+
+        for c in cols:
+            table.add_column(c)
+
+        preview_limit = min(200, len(self.rows))
+        for r in self.rows[:preview_limit]:
+            table.add_row(*[(r.get(c, "") or "") for c in cols])
+
+    def _build_tasks(self) -> List[TrackItem]:
+        tasks: List[TrackItem] = []
+        artist_col = (
+            self.query_one("#artist_sel", Select).value or self.detected.artist_col
+        )
+        track_col = (
+            self.query_one("#track_sel", Select).value or self.detected.track_col
+        )
+        single = self.detected.single_title_col
+
+        for r in self.rows:
+            artist = (r.get(artist_col, "") if artist_col else "") if not single else ""
+            title = (r.get(track_col, "") if track_col else "") if not single else ""
+            if single:
+                artist, title = parse_artist_title_from_single(r.get(single, ""))
+
+            artist = (artist or "").strip()
+            title = (title or "").strip()
+            if not artist and not title:
+                continue
+            query = f"{artist} - {title}".strip(" -")
+            stub = f"{artist} - {title}".strip(" -") or title or artist
+            item = TrackItem(artist=artist, title=title, query=query, target_stub=stub)
+            tasks.append(item)
+        return tasks
+
+    def _start_downloads(self):
+        if self.running:
+            self._log("Already running.")
+            return
+        self.tasks = self._build_tasks()
+        if not self.tasks:
+            self._log("No tasks detected. Check your column selection.")
+            return
+
+        # Update UI
+        self.running = True
+        self.query_one("#start_btn", Button).disabled = True
+        self.query_one("#stop_btn", Button).disabled = False
+        self.query_one("#export_btn", Button).disabled = True
+        self._status(f"0 / {len(self.tasks)}")
+        self._progress(0.0)
+
+        # Launch in a worker thread (Textual worker API mechanics are stable; we use a simple thread)
+        def run():
+            downloader = YTDLPDownloader(self.music_dir, app_logger=self._log)
+            completed = 0
+            total = len(self.tasks)
+            for item in self.tasks:
+                if not self.running:
+                    break
+                if self.dry_run:
+                    self._log(f"[dry-run] Searching: {item.query}")
+                result = downloader.find_and_download(item, dry_run=self.dry_run)
+                completed += 1
+                self.call_from_thread(
+                    self._status, f"{completed} / {total} — {result.status}"
+                )
+                self.call_from_thread(self._progress, completed / total)
+            self.call_from_thread(self._done)
+
+        self._worker = threading.Thread(target=run, daemon=True)
+        self._worker.start()
+
+    def _cancel_worker(self):
+        if not self.running:
+            return
+        self.running = False
+        self._log("[cancel] Stopping after current item...")
+        # thread will exit after current iteration
+
+    def _done(self):
+        self.running = False
+        self.query_one("#start_btn", Button).disabled = False
+        self.query_one("#stop_btn", Button).disabled = True
+        self.query_one("#export_btn", Button).disabled = False
+        ok = sum(1 for t in self.tasks if t.status in ("done", "found"))
+        err = sum(1 for t in self.tasks if t.status == "error")
+        self._status(f"Complete — OK: {ok} / Errors: {err}")
+        self._log(f"[done] Finished. OK={ok}  Errors={err}. Files in {self.music_dir}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="CSV → YouTube Audio Downloader (Textual TUI)"
+    )
+    parser.add_argument("--csv", help="Optional CSV path to prefill", default="")
+    args = parser.parse_args()
+    app = MusicDownloaderApp()
+    if args.csv:
+        app.csv_path = args.csv
+    app.run()
+
+
+if __name__ == "__main__":
+    main()

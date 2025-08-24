@@ -1,0 +1,135 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "musicdl"
+version = "1.0.0"
+description = "A modern TUI for downloading YouTube audio from CSV playlists"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Sawyer", email = "sawyer@example.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: System :: Archiving",
+]
+keywords = ["youtube", "audio", "downloader", "csv", "tui", "music"]
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=5.3,<6.0",
+    "yt-dlp>=2025.0.0",
+    "imageio-ffmpeg>=0.4.9",
+    "pydantic>=2.0.0",
+    "platformdirs>=4.0.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pre-commit>=3.0.0",
+    "ruff>=0.5.0",
+    "mypy>=1.5.0",
+    "textual[dev]",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.urls]
+Repository = "https://github.com/sawyer/musicdl-py"
+Issues = "https://github.com/sawyer/musicdl-py/issues"
+Changelog = "https://github.com/sawyer/musicdl-py/releases"
+
+[project.scripts]
+musicdl = "musicdl.cli:main"
+
+[project.gui-scripts]
+musicdl-gui = "musicdl.cli:main"
+
+[tool.hatch.version]
+path = "src/musicdl/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/musicdl"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings  
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "S",   # bandit security
+    "T20", # flake8-print
+]
+ignore = [
+    "E501",  # line too long
+    "S101",  # use of assert
+    "T201",  # print statements (allowed in CLI)
+]
+
+[tool.ruff.per-file-ignores]
+"tests/**/*" = ["S101", "T201"]
+"src/musicdl/cli.py" = ["T201"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "yt_dlp.*",
+    "imageio_ffmpeg",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=musicdl",
+    "--cov-report=term-missing",
+]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
