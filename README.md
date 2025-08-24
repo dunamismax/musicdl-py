@@ -1,6 +1,6 @@
 # MusicDL
 
-A modern, fast, and user-friendly TUI application for downloading YouTube audio from CSV playlists.
+A modern TUI application for downloading YouTube audio with multiple input methods and interactive navigation.
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -8,232 +8,156 @@ A modern, fast, and user-friendly TUI application for downloading YouTube audio 
 
 ## Features
 
-- **Smart CSV Processing** - Automatically detects Artist/Track columns or single "Artist - Title" format
-- **Modern TUI Interface** - Built with Textual 5.x for a responsive terminal experience
-- **High-Quality Audio** - Downloads the best available audio format using yt-dlp
-- **Dry Run Mode** - Search and preview tracks without downloading
-- **Progress Tracking** - Real-time progress bars and detailed logging
-- **Configurable** - Customizable output directories, formats, and behavior
-- **Fast Setup** - Automatic UV environment management with zero configuration
+- **CSV Processing** - Smart detection of Artist/Track columns or "Artist - Title" format
+- **Single URLs** - Download individual YouTube videos or playlists
+- **Batch Processing** - Handle text files with multiple URLs
+- **Format Selection** - Choose audio format (MP3, AAC, FLAC) and bitrate
+- **Modern TUI** - Interactive menu navigation with real-time progress
+- **Export Results** - JSON export of download results and errors
 
 ## Quick Start
 
-### Prerequisites
+### 1. Install UV (if not already installed)
 
-- Python 3.10 or higher
-- [UV package manager](https://docs.astral.sh/uv/) (installed automatically if missing)
-
-### Installation & Usage
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/sawyer/musicdl-py.git
-   cd musicdl-py
-   ```
-
-2. **Run the application:**
-   ```bash
-   python -m musicdl
-   ```
-   
-   The first run will automatically:
-   - Install UV if not present
-   - Create a virtual environment
-   - Install all dependencies
-   - Launch the TUI interface
-
-3. **Or install as a package:**
-   ```bash
-   uv pip install -e .
-   musicdl
-   ```
-
-## CSV Format Support
-
-### Separate Columns
-```csv
-Artist,Title,Album
-Howard Shore,Concerning Hobbits,LOTR Fellowship Soundtrack
-Hans Zimmer,He's a Pirate,Pirates of Caribbean Soundtrack
+**macOS/Linux:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Single Column  
+**Windows:**
+```powershell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+### 2. Clone and Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/sawyer/musicdl-py.git
+cd musicdl-py
+
+# Create virtual environment with UV
+uv venv
+
+# Activate the environment
+# On macOS/Linux:
+source .venv/bin/activate
+# On Windows:
+# .venv\Scripts\activate
+
+# Install dependencies
+uv pip install -e .
+```
+
+### 3. Run the Application
+
+```bash
+# Run with UV (recommended - handles environment automatically)
+uv run python -m musicdl
+
+# Or if environment is activated:
+python -m musicdl
+```
+
+### 4. Navigate the Menu
+
+Use **↑/↓ arrows** to navigate and **Enter** to select:
+- **CSV Mode** - Upload and process CSV files 
+- **URL Mode** - Download single YouTube links
+- **Text Mode** - Batch download from URL lists
+- **Settings** - Configure formats and quality
+- **Exit** - Close application
+
+## Supported Input Formats
+
+### CSV Files
 ```csv
+# Separate columns
+Artist,Title
+Howard Shore,Concerning Hobbits
+Hans Zimmer,He's a Pirate
+
+# Single column
 Track
 Howard Shore - Concerning Hobbits
 Hans Zimmer - He's a Pirate
 ```
 
-The application automatically detects which format your CSV uses.
+### Text Files (URLs)
+```
+# One URL per line, comments supported
+https://www.youtube.com/watch?v=abc123
+https://youtu.be/def456
+# This is a comment
+https://www.youtube.com/playlist?list=xyz789
+```
 
-## Usage Examples
+## Command Line Options
 
 ```bash
-# Basic usage
-musicdl
+# Interactive menu (default)
+uv run python -m musicdl
 
-# Load CSV file on startup
-musicdl --csv my-playlist.csv
+# Direct CSV mode
+uv run python -m musicdl --csv tracks.csv
 
-# Start in dry-run mode
-musicdl --dry-run
+# Dry run (search only)
+uv run python -m musicdl --dry-run
 
-# Use custom configuration
-musicdl --config ~/.config/musicdl/config.json
-
-# Enable debug logging
-musicdl --log-level DEBUG
+# Debug logging
+uv run python -m musicdl --log-level DEBUG
 ```
-
-## Key Features
-
-### 🎵 **Intelligent CSV Processing**
-- Automatic column detection using synonym matching
-- Support for both separate and combined artist-title columns
-- Manual column override capabilities
-- Preview up to 200 rows for verification
-
-### 🚀 **Modern Architecture** 
-- Built with latest yt-dlp (2025.08.22) with YouTube compatibility
-- UV package manager for 10-100x faster dependency resolution
-- FFmpeg integration via imageio-ffmpeg for audio processing
-- Pydantic models for robust configuration and data validation
-
-### 🎨 **Enhanced User Interface**
-- Responsive TUI built with Textual 5.x
-- Real-time progress tracking and status updates  
-- Comprehensive keyboard shortcuts
-- Rich logging with color-coded messages
-- Dark theme optimized for terminal use
-
-### ⚙️ **Professional Configuration**
-- XDG-compliant configuration directory
-- JSON-based settings with validation
-- Configurable output templates and directories
-- Advanced yt-dlp options support
-
-## Project Structure
-
-```
-musicdl-py/
-├── src/musicdl/          # Main application code
-│   ├── core/             # Core business logic  
-│   ├── ui/               # TUI interface components
-│   ├── utils/            # Utility functions
-│   └── config.py         # Configuration management
-├── tests/                # Unit tests
-├── docs/                 # Documentation
-├── examples/             # Example CSV files
-└── pyproject.toml        # Modern Python packaging
-```
-
-## Development
-
-### Setup Development Environment
-
-```bash
-# Clone and enter directory
-git clone https://github.com/sawyer/musicdl-py.git
-cd musicdl-py
-
-# Install with development dependencies
-uv pip install -e ".[dev]"
-
-# Install pre-commit hooks
-pre-commit install
-
-# Run tests
-pytest
-
-# Run linting
-ruff check src/ tests/
-ruff format src/ tests/
-
-# Type checking
-mypy src/musicdl
-```
-
-### Code Quality
-
-The project uses modern Python tooling:
-- **Ruff** - Lightning-fast linting and formatting
-- **MyPy** - Static type checking
-- **Pytest** - Testing framework
-- **Pre-commit** - Git hooks for code quality
-
-## Requirements
-
-Based on latest documentation (August 2025):
-
-- **Python 3.10+** (3.9 reaches EOL in October 2025)
-- **yt-dlp 2025.0.0+** - Latest YouTube compatibility
-- **UV package manager** - Fast dependency management
-- **FFmpeg** - Audio processing (auto-installed via imageio-ffmpeg)
-- **Textual 5.3+** - Modern TUI framework
 
 ## Configuration
 
-Configuration files are stored in standard locations:
+Settings are stored in standard locations:
 - **Linux/macOS**: `~/.config/musicdl/config.json`
 - **Windows**: `%APPDATA%/musicdl/config.json`
 
-Example configuration:
-```json
-{
-  "music_dir": "Music",
-  "audio_format": "bestaudio/best", 
-  "output_template": "{artist} - {title}.%(ext)s",
-  "max_concurrent_downloads": 1,
-  "overwrite_files": true,
-  "theme": "dark"
-}
+Configure via the Settings menu or edit the JSON file directly.
+
+## Development
+
+```bash
+# Setup development environment
+git clone https://github.com/sawyer/musicdl-py.git
+cd musicdl-py
+
+# Create environment and install dev dependencies  
+uv venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+uv pip install -e ".[dev]"
+
+# Run tests and linting
+pytest
+ruff check src/ tests/
+ruff format src/ tests/
 ```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes and add tests
-4. Run the test suite (`pytest`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
 
 ## Troubleshooting
 
-### Common Issues
-
-**UV Not Found Error:**
+**UV Installation Issues:**
 ```bash
-# Install UV manually
-curl -LsSf https://astral.sh/uv/install.sh | sh  # macOS/Linux
-# or
+# Manual UV installation
+curl -LsSf https://astral.sh/uv/install.sh | sh    # macOS/Linux
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"  # Windows
 ```
 
-**Download Failures:**
-- Check internet connection
-- Verify track names in CSV
-- Try dry-run mode first to test searches
-- Some content may not be available
-
-**Permission Errors:**
-- Ensure write permissions to output directory
-- Check disk space availability
-
-For detailed troubleshooting, see [docs/usage.md](docs/usage.md).
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube downloading capability
-- [Textual](https://textual.textualize.io/) - Modern TUI framework  
-- [UV](https://docs.astral.sh/uv/) - Fast Python package management
-- [Pydantic](https://pydantic-docs.helpmanual.io/) - Data validation
+**Download Issues:**
+- Verify internet connection and URLs
+- Try dry-run mode first to test searches  
+- Some content may not be available due to regional restrictions
 
 ---
 
-**Note:** This tool is for personal use only. Respect YouTube's Terms of Service and copyright laws. Only download content you have the right to download.
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube downloading
+- [Textual](https://textual.textualize.io/) - Modern TUI framework  
+- [UV](https://docs.astral.sh/uv/) - Fast Python package management
+
+**Note:** For personal use only. Respect YouTube's Terms of Service and copyright laws.

@@ -12,7 +12,7 @@ PROJECT_ROOT = PACKAGE_ROOT.parent.parent
 
 __all__ = [
     "__version__",
-    "__author__", 
+    "__author__",
     "__email__",
     "PACKAGE_ROOT",
     "PROJECT_ROOT",

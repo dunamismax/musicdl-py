@@ -6,7 +6,7 @@ from .styles import APP_CSS
 
 __all__ = [
     "MusicDownloaderApp",
-    "ProgressDisplay", 
+    "ProgressDisplay",
     "StatusDisplay",
     "APP_CSS",
 ]

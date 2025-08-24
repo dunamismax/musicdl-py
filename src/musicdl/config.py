@@ -23,16 +23,16 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 class ConfigManager:
     """Manages application configuration."""
-    
+
     def __init__(self, config_path: Optional[Path] = None) -> None:
         self.config_path = config_path or CONFIG_FILE
         self._config: Optional[AppConfig] = None
-    
+
     def load(self) -> AppConfig:
         """Load configuration from file or create default."""
         if self._config is not None:
             return self._config
-        
+
         # Try loading from file
         if self.config_path.exists():
             try:
@@ -47,66 +47,68 @@ class ConfigManager:
             # Create default config
             self._config = AppConfig()
             logger.info("Using default configuration")
-        
+
         # Set absolute paths relative to user directories
         self._config = self._resolve_paths(self._config)
-        
+
         return self._config
-    
+
     def save(self, config: Optional[AppConfig] = None) -> None:
         """Save configuration to file."""
         if config is not None:
             self._config = config
-        
+
         if self._config is None:
             logger.warning("No configuration to save")
             return
-        
+
         # Ensure config directory exists
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         try:
             # Convert to dict for serialization
             config_dict = self._config.model_dump(mode="json")
-            
+
             # Convert Path objects to strings
             config_dict = self._serialize_paths(config_dict)
-            
-            self.config_path.write_text(
-                json.dumps(config_dict, indent=2)
-            )
+
+            self.config_path.write_text(json.dumps(config_dict, indent=2))
             logger.info(f"Saved configuration to {self.config_path}")
-            
+
+        except (OSError, IOError) as e:
+            logger.error(f"Failed to write config file: {e}")
+        except (TypeError, ValueError) as e:
+            logger.error(f"Failed to serialize config: {e}")
         except Exception as e:
-            logger.error(f"Failed to save config: {e}")
-    
+            logger.error(f"Unexpected error saving config: {e}")
+
     def reset(self) -> AppConfig:
         """Reset to default configuration."""
         self._config = AppConfig()
         self._config = self._resolve_paths(self._config)
         return self._config
-    
+
     def _resolve_paths(self, config: AppConfig) -> AppConfig:
         """Resolve relative paths to absolute user directories."""
-        
+
         # Create new config with resolved paths
         resolved_data = config.model_dump()
-        
+
         # Resolve directories relative to user data directory
         if not config.music_dir.is_absolute():
             resolved_data["music_dir"] = DATA_DIR / config.music_dir
-        
+
         if not config.cache_dir.is_absolute():
             resolved_data["cache_dir"] = DATA_DIR / config.cache_dir
-        
+
         if not config.logs_dir.is_absolute():
             resolved_data["logs_dir"] = DATA_DIR / config.logs_dir
-        
+
         return AppConfig(**resolved_data)
-    
+
     def _serialize_paths(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Convert Path objects to strings for JSON serialization."""
-        
+
         serialized = {}
         for key, value in config_dict.items():
             if isinstance(value, Path):
@@ -116,7 +118,7 @@ class ConfigManager:
                 serialized[key] = value
             else:
                 serialized[key] = value
-        
+
         return serialized
 
 
