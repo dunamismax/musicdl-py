@@ -1,6 +1,6 @@
 # MusicDL
 
-A modern TUI application for downloading YouTube audio with multiple input methods and interactive navigation.
+A modern TUI application for downloading YouTube audio with CSV processing, concurrent downloads, and high-quality Opus format output.
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -8,12 +8,12 @@ A modern TUI application for downloading YouTube audio with multiple input metho
 
 ## Features
 
-- **CSV Processing** - Smart detection of Artist/Track columns or "Artist - Title" format
-- **Single URLs** - Download individual YouTube videos or playlists
-- **Batch Processing** - Handle text files with multiple URLs
-- **Format Selection** - Choose audio format (MP3, AAC, FLAC) and bitrate
-- **Modern TUI** - Interactive menu navigation with real-time progress
-- **Export Results** - JSON export of download results and errors
+- **CSV Auto-Detection** - Automatically finds and loads CSV files from project directory
+- **Smart Column Detection** - Identifies Artist/Title columns or "Artist - Title" format
+- **High-Quality Audio** - Opus format in WebM containers for optimal quality and compression
+- **Concurrent Downloads** - Multi-threaded downloading with speed optimizations
+- **Interactive TUI** - Real-time progress tracking with modern terminal interface
+- **Flexible Output** - Downloads to ~/Downloads/MusicDL Downloads with YouTube video titles
 
 ## Quick Start
 
@@ -59,37 +59,28 @@ uv run python -m musicdl
 python -m musicdl
 ```
 
-### 4. Navigate the Menu
+### 4. Navigate the Interface
 
-Use **↑/↓ arrows** to navigate and **Enter** to select:
-- **CSV Mode** - Upload and process CSV files 
-- **URL Mode** - Download single YouTube links
-- **Text Mode** - Batch download from URL lists
-- **Settings** - Configure formats and quality
-- **Exit** - Close application
+The application automatically detects tracks.csv in the project directory. Use:
+- **Arrow keys** - Navigate menu and interface elements
+- **CSV Mode** - Process CSV files with Artist/Title data
+- **URL Mode** - Download individual YouTube videos
+- **Settings** - Configure audio format and download options
+- **Ctrl+Q** - Exit application
 
 ## Supported Input Formats
 
 ### CSV Files
 ```csv
-# Separate columns
+# Three-column format (Title, Artist, Album)
+Title,Artist,Album
+Bilbo's Adventure,Howard Shore,
+He's a Pirate,Klaus Badelt & Hans Zimmer,Pirates of the Caribbean
+
+# Two-column format
 Artist,Title
 Howard Shore,Concerning Hobbits
-Hans Zimmer,He's a Pirate
-
-# Single column
-Track
-Howard Shore - Concerning Hobbits
-Hans Zimmer - He's a Pirate
-```
-
-### Text Files (URLs)
-```
-# One URL per line, comments supported
-https://www.youtube.com/watch?v=abc123
-https://youtu.be/def456
-# This is a comment
-https://www.youtube.com/playlist?list=xyz789
+Hans Zimmer,Time
 ```
 
 ## Command Line Options
@@ -108,13 +99,13 @@ uv run python -m musicdl --dry-run
 uv run python -m musicdl --log-level DEBUG
 ```
 
-## Configuration
+## Output and Configuration
 
-Settings are stored in standard locations:
+Audio files are downloaded to `~/Downloads/MusicDL Downloads/` using the actual YouTube video titles. Default format is Opus in WebM containers for high quality and small file size.
+
+Settings stored at:
 - **Linux/macOS**: `~/.config/musicdl/config.json`
 - **Windows**: `%APPDATA%/musicdl/config.json`
-
-Configure via the Settings menu or edit the JSON file directly.
 
 ## Development
 

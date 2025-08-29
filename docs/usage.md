@@ -75,7 +75,7 @@ The application automatically detects which format your CSV uses.
 
 ### 3. Choose Download Mode
 
-- **Download Mode**: Actually downloads audio files to the Music directory
+- **Download Mode**: Downloads Opus audio files to ~/Downloads/MusicDL Downloads/
 - **Dry Run Mode**: Only searches for tracks without downloading
 
 ### 4. Start Processing
@@ -134,12 +134,12 @@ MusicDL stores configuration in:
 
 ## Output Files
 
-Downloaded files are saved to the `Music` directory with the format:
+Downloaded files are saved to `~/Downloads/MusicDL Downloads/` using YouTube video titles:
 ```
-Artist - Title.ext
+YouTube Video Title.opus
 ```
 
-Where `ext` is the best available audio format (usually `.m4a`, `.opus`, or `.webm`).
+Files use Opus codec in WebM containers for high quality and efficient compression.
 
 ## Troubleshooting
 
@@ -182,3 +182,5 @@ Edit your configuration file to change the output directory:
   "music_dir": "/path/to/your/music/library"
 }
 ```
+
+Note: Default is now ~/Downloads/MusicDL Downloads/ for easier file management.
