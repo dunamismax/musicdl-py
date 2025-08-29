@@ -206,7 +206,50 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+*.lnk
+desktop.ini
+
+# Linux
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Configuration and cache
+config.json
+*.ini
+.cache/
+
 # Application specific
 Music/
+"MusicDL Downloads"/
 download_results.json
 logs/
+test_*.csv
+test_*.txt
+*.log
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.sublime-*
+.atom/
+
+# Runtime and process files
+*.pid
+*.sock
+nohup.out
