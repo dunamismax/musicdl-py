@@ -4,21 +4,19 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
-import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 from rich.logging import RichHandler
 
 
 def setup_logging(
-    logs_dir: Optional[Path] = None,
+    logs_dir: Path | None = None,
     log_level: str = "INFO",
     enable_file_logging: bool = True,
     enable_console_logging: bool = True,
-    log_format: Optional[str] = None,
+    log_format: str | None = None,
 ) -> logging.Logger:
     """
     Set up logging configuration.

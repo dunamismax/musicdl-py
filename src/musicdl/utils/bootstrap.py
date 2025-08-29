@@ -8,10 +8,9 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import List, Optional
 
 # Required packages for the application
-REQUIRED_PACKAGES = [
+REQUIRED_PACKAGES: list[str] = [
     "textual>=5.3,<6.0",
     "yt-dlp>=2025.0.0",
     "imageio-ffmpeg>=0.4.9",
@@ -28,29 +27,29 @@ class BootstrapError(Exception):
 def _validate_executable(path: str, expected_name: str) -> bool:
     """Validate that an executable is safe to use."""
     import stat
-    
+
     try:
         # Check if file exists and is a regular file
         if not os.path.isfile(path):
             return False
-        
+
         # Check file permissions - must be executable
         file_stat = os.stat(path)
         if not (file_stat.st_mode & stat.S_IEXEC):
             return False
-        
+
         # Prevent path traversal
         normalized_path = os.path.normpath(os.path.abspath(path))
-        if '..' in normalized_path:
+        if ".." in normalized_path:
             return False
-        
+
         # Basic filename validation
         filename = os.path.basename(path).lower()
         if expected_name not in filename:
             return False
-            
+
         return True
-        
+
     except (OSError, ValueError):
         return False
 
@@ -59,16 +58,16 @@ def _validate_path_safe(path: str) -> bool:
     """Validate that a path is safe to use."""
     try:
         # Prevent path traversal attempts
-        if '..' in path or path.startswith('/') and not path.startswith(os.getcwd()):
+        if ".." in path or path.startswith("/") and not path.startswith(os.getcwd()):
             return False
-        
+
         # Normalize and check
         normalized = os.path.normpath(path)
-        if normalized != path.replace('\\\\', '/').replace('\\', '/'):
+        if normalized != path.replace("\\\\", "/").replace("\\", "/"):
             return False
-            
+
         return True
-        
+
     except (OSError, ValueError):
         return False
 
@@ -76,39 +75,39 @@ def _validate_path_safe(path: str) -> bool:
 def _validate_package_name(package: str) -> bool:
     """Validate package name format for security."""
     import re
-    
+
     # Allow standard package name format with version specifiers
-    pattern = r'^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]?(?:[><=!~]+[0-9][a-zA-Z0-9.,<>]*)?(?:,[<>=!~]+[0-9][a-zA-Z0-9.,<>]*)*$'
-    
+    pattern = r"^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]?(?:[><=!~]+[0-9][a-zA-Z0-9.,<>]*)?(?:,[<>=!~]+[0-9][a-zA-Z0-9.,<>]*)*$"
+
     if not re.match(pattern, package):
         return False
-    
+
     # Reject obviously malicious patterns
-    dangerous_chars = ['&', '|', ';', '`', '$', '(', ')', '{', '}', '[', ']']
+    dangerous_chars = ["&", "|", ";", "`", "$", "(", ")", "{", "}", "[", "]"]
     if any(char in package for char in dangerous_chars):
         return False
-        
+
     return True
 
 
 def _get_safe_env() -> dict:
     """Get a minimal safe environment for subprocess execution."""
     safe_env = {
-        'PATH': os.environ.get('PATH', ''),
-        'HOME': os.environ.get('HOME', ''),
-        'USER': os.environ.get('USER', ''),
-        'SHELL': os.environ.get('SHELL', ''),
-        'TERM': os.environ.get('TERM', 'xterm'),
-        'LANG': os.environ.get('LANG', 'en_US.UTF-8'),
-        'LC_ALL': os.environ.get('LC_ALL', ''),
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": os.environ.get("HOME", ""),
+        "USER": os.environ.get("USER", ""),
+        "SHELL": os.environ.get("SHELL", ""),
+        "TERM": os.environ.get("TERM", "xterm"),
+        "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+        "LC_ALL": os.environ.get("LC_ALL", ""),
     }
-    
+
     # Add UV-specific environment variables if they exist
-    uv_vars = ['UV_CACHE_DIR', 'UV_CONFIG_FILE', 'UV_NO_CACHE']
+    uv_vars = ["UV_CACHE_DIR", "UV_CONFIG_FILE", "UV_NO_CACHE"]
     for var in uv_vars:
         if var in os.environ:
             safe_env[var] = os.environ[var]
-    
+
     return safe_env
 
 
@@ -136,11 +135,11 @@ def ensure_uv_available() -> str:
     if not uv_path:
         error_msg = textwrap.dedent("""
         UV package manager is required but not found on PATH.
-        
+
         Install UV:
           macOS/Linux:  curl -LsSf https://astral.sh/uv/install.sh | sh
           Windows:      powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-        
+
         Then restart your terminal and try again.
         """).strip()
         raise BootstrapError(error_msg)
@@ -159,32 +158,32 @@ def create_venv(uv_path: str, project_root: Path, venv_dir: Path) -> None:
         raise BootstrapError(f"Unsafe venv directory path: {venv_dir}")
     if not _validate_path_safe(str(project_root)):
         raise BootstrapError(f"Unsafe project root path: {project_root}")
-    
+
     try:
         # Use validated paths and restrict subprocess environment
-        result = subprocess.run(
+        subprocess.run(
             [uv_path, "venv", str(venv_dir)],
             cwd=str(project_root),
             check=True,
             capture_output=True,
             text=True,
             timeout=120,  # 2 minute timeout
-            env=_get_safe_env()
+            env=_get_safe_env(),
         )
     except subprocess.TimeoutExpired as e:
-        raise BootstrapError(f"Venv creation timed out after 2 minutes") from e
+        raise BootstrapError("Venv creation timed out after 2 minutes") from e
     except subprocess.CalledProcessError as e:
         raise BootstrapError(f"Failed to create venv: {e.stderr}") from e
 
 
-def install_packages(uv_path: str, venv_dir: Path, packages: List[str]) -> None:
+def install_packages(uv_path: str, venv_dir: Path, packages: list[str]) -> None:
     """Install packages into venv using UV with security validation."""
     python_path = str(get_venv_python(venv_dir))
-    
+
     # Validate python executable
     if not _validate_executable(python_path, "python"):
         raise BootstrapError(f"Python executable validation failed: {python_path}")
-    
+
     # Validate package names for security
     for package in packages:
         if not _validate_package_name(package):
@@ -194,20 +193,20 @@ def install_packages(uv_path: str, venv_dir: Path, packages: List[str]) -> None:
 
     try:
         subprocess.run(
-            cmd, 
-            check=True, 
-            capture_output=True, 
+            cmd,
+            check=True,
+            capture_output=True,
             text=True,
             timeout=300,  # 5 minute timeout for package installation
-            env=_get_safe_env()
+            env=_get_safe_env(),
         )
     except subprocess.TimeoutExpired as e:
-        raise BootstrapError(f"Package installation timed out after 5 minutes") from e
+        raise BootstrapError("Package installation timed out after 5 minutes") from e
     except subprocess.CalledProcessError as e:
         raise BootstrapError(f"Failed to install packages: {e.stderr}") from e
 
 
-def reexec_in_venv(venv_dir: Path, script_path: Path, args: List[str]) -> None:
+def reexec_in_venv(venv_dir: Path, script_path: Path, args: list[str]) -> None:
     """Re-execute the script in the virtual environment."""
     python_path = str(get_venv_python(venv_dir))
     exec_args = [python_path, str(script_path)] + args
@@ -218,9 +217,9 @@ def reexec_in_venv(venv_dir: Path, script_path: Path, args: List[str]) -> None:
 
 def ensure_uv_environment(
     project_root: Path,
-    venv_dir: Optional[Path] = None,
-    packages: Optional[List[str]] = None,
-    script_path: Optional[Path] = None,
+    venv_dir: Path | None = None,
+    packages: list[str] | None = None,
+    script_path: Path | None = None,
     reexec: bool = True,
 ) -> None:
     """

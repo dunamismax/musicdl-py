@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import List, Optional
 
 from textual.screen import Screen
 
@@ -22,16 +21,16 @@ class BaseDownloadScreen(Screen):
     def __init__(self, config: AppConfig, **kwargs) -> None:
         super().__init__(**kwargs)
         self.config = config
-        self.downloader: Optional[YTDLPDownloader] = None
-        self.track_items: List[TrackItem] = []
-        self.worker_thread: Optional[threading.Thread] = None
-        self.tui_log_handler: Optional[TUILogHandler] = None
+        self.downloader: YTDLPDownloader | None = None
+        self.track_items: list[TrackItem] = []
+        self.worker_thread: threading.Thread | None = None
+        self.tui_log_handler: TUILogHandler | None = None
         self.is_running = False
 
         # UI components (to be set by subclasses in compose)
-        self.log_panel: Optional[LogPanel] = None
-        self.progress_display: Optional[ProgressDisplay] = None
-        self.status_display: Optional[StatusDisplay] = None
+        self.log_panel: LogPanel | None = None
+        self.progress_display: ProgressDisplay | None = None
+        self.status_display: StatusDisplay | None = None
 
     def on_mount(self) -> None:
         """Initialize common functionality."""
@@ -65,7 +64,7 @@ class BaseDownloadScreen(Screen):
         """Custom unmount logic for subclasses (optional)."""
         pass
 
-    def _start_downloads(self, tracks: List[TrackItem], dry_run: bool = False) -> None:
+    def _start_downloads(self, tracks: list[TrackItem], dry_run: bool = False) -> None:
         """Start downloading tracks."""
         if self.is_running:
             self._log_to_ui("Downloads already running")
@@ -126,7 +125,6 @@ class BaseDownloadScreen(Screen):
                 break
 
             # Update progress
-            mode = "search" if dry_run else "download"
             self.call_from_thread(
                 self._update_progress,
                 completed,
@@ -140,11 +138,12 @@ class BaseDownloadScreen(Screen):
 
     def _download_concurrent(self, dry_run: bool = False) -> None:
         """Concurrent download processing."""
+
         def progress_callback(completed: int, total: int, track: TrackItem) -> None:
             """Progress callback for concurrent downloads."""
             if not self.is_running:
                 return
-            mode = "search" if dry_run else "download"
+            # Progress update
             self.call_from_thread(
                 self._update_progress,
                 completed,
@@ -158,20 +157,18 @@ class BaseDownloadScreen(Screen):
                 self.track_items,
                 dry_run=dry_run,
                 progress_callback=progress_callback,
-                max_workers=self.config.max_concurrent_downloads
+                max_workers=self.config.max_concurrent_downloads,
             )
-            
+
             # Log results
-            for track, result in zip(self.track_items, results):
+            for track, result in zip(self.track_items, results, strict=False):
                 if not self.is_running:
                     break
                 self._log_track_result(track, result, dry_run)
-                
+
         except Exception as e:
             logger.error(f"Concurrent download error: {e}")
-            self.call_from_thread(
-                self._log_to_ui, f"Concurrent download failed: {e}"
-            )
+            self.call_from_thread(self._log_to_ui, f"Concurrent download failed: {e}")
 
     def _process_single_track(self, item: TrackItem, dry_run: bool) -> None:
         """Process a single track and log the result."""
@@ -183,17 +180,13 @@ class BaseDownloadScreen(Screen):
             logger.error(f"Unexpected error processing {item.display_name}: {e}")
             item.status = TrackStatus.ERROR
             item.error = str(e)
-            self.call_from_thread(
-                self._log_to_ui, f"Error: {item.display_name} - {e}"
-            )
+            self.call_from_thread(self._log_to_ui, f"Error: {item.display_name} - {e}")
 
     def _log_track_result(self, track: TrackItem, result, dry_run: bool) -> None:
         """Log the result of processing a track."""
         if result.success:
             if dry_run:
-                self.call_from_thread(
-                    self._log_to_ui, f"Found: {track.display_name}"
-                )
+                self.call_from_thread(self._log_to_ui, f"Found: {track.display_name}")
             else:
                 self.call_from_thread(
                     self._log_to_ui, f"Downloaded: {track.display_name}"
@@ -284,8 +277,8 @@ class BaseDownloadScreen(Screen):
             return
 
         try:
-            from pathlib import Path
             import json
+            from pathlib import Path
 
             output_file = Path(filename)
             results = [item.to_dict() for item in self.track_items]

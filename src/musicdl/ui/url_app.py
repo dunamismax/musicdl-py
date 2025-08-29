@@ -4,22 +4,21 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List
 
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import (
     Button,
+    Footer,
     Header,
     Input,
     Label,
-    Footer,
 )
 
 from ..core import TrackItem
 from ..core.models import AppConfig
-from ..core.url_processor import URLProcessor, URLParsingError
+from ..core.url_processor import URLParsingError, URLProcessor
 from .base_screen import BaseDownloadScreen
 from .components import LogPanel, ProgressDisplay, StatusDisplay
 
@@ -33,58 +32,58 @@ class URLDownloadScreen(BaseDownloadScreen):
     URLDownloadScreen {
         background: $surface;
     }
-    
+
     #main-content {
         padding: 1;
     }
-    
+
     #input-section {
         height: 8;
         border: solid $border;
         padding: 1;
         margin-bottom: 1;
     }
-    
+
     #url-input {
         margin: 1 0;
     }
-    
+
     #title-input {
         margin: 1 0;
     }
-    
+
     #controls {
         height: 3;
         align: center middle;
         margin: 1 0;
     }
-    
+
     #controls Button {
         margin: 0 1;
     }
-    
+
     #info-section {
         height: 15;
         border: solid $border;
         padding: 1;
         margin-bottom: 1;
     }
-    
+
     #log-panel {
         height: 10;
     }
-    
+
     #progress-section {
         height: 4;
         border: solid $border;
         padding: 1;
     }
-    
+
     .section-label {
         text-style: bold;
         color: $primary;
     }
-    
+
     .input-label {
         color: $text;
         width: 15;
@@ -99,7 +98,7 @@ class URLDownloadScreen(BaseDownloadScreen):
     def __init__(self, config: AppConfig, **kwargs) -> None:
         super().__init__(config, **kwargs)
         self.url_processor = URLProcessor()
-        self.track_item: Optional[TrackItem] = None
+        self.track_item: TrackItem | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the URL download screen."""
@@ -193,12 +192,14 @@ class URLDownloadScreen(BaseDownloadScreen):
         # Check if it's a playlist
         if self.url_processor.is_playlist_url(url):
             playlist_id = self.url_processor.extract_playlist_id(url)
-            self._log_to_ui(f"Valid YouTube playlist URL detected")
+            self._log_to_ui("Valid YouTube playlist URL detected")
             self._log_to_ui(f"Playlist ID: {playlist_id}")
-            self._log_to_ui("Warning: Playlist download will get all videos in the playlist")
+            self._log_to_ui(
+                "Warning: Playlist download will get all videos in the playlist"
+            )
         else:
             video_id = self.url_processor.extract_video_id(url)
-            self._log_to_ui(f"Valid YouTube video URL detected")
+            self._log_to_ui("Valid YouTube video URL detected")
             self._log_to_ui(f"Video ID: {video_id}")
 
         normalized_url = self.url_processor.normalize_youtube_url(url)
@@ -252,54 +253,54 @@ class TextFileDownloadScreen(BaseDownloadScreen):
     TextFileDownloadScreen {
         background: $surface;
     }
-    
+
     #main-content {
         padding: 1;
     }
-    
+
     #input-section {
         height: 6;
         border: solid $border;
         padding: 1;
         margin-bottom: 1;
     }
-    
+
     #file-input {
         margin: 1 0;
     }
-    
+
     #controls {
         height: 3;
         align: center middle;
         margin: 1 0;
     }
-    
+
     #controls Button {
         margin: 0 1;
     }
-    
+
     #info-section {
         height: 15;
         border: solid $border;
         padding: 1;
         margin-bottom: 1;
     }
-    
+
     #log-panel {
         height: 12;
     }
-    
+
     #progress-section {
         height: 4;
         border: solid $border;
         padding: 1;
     }
-    
+
     .section-label {
         text-style: bold;
         color: $primary;
     }
-    
+
     .input-label {
         color: $text;
         width: 15;
@@ -424,7 +425,7 @@ class TextFileDownloadScreen(BaseDownloadScreen):
                 file_path
             )
 
-            self._log_to_ui(f"File validation complete:")
+            self._log_to_ui("File validation complete:")
             self._log_to_ui(f"   Total lines: {total_lines}")
             self._log_to_ui(f"   Valid URLs: {valid_urls}")
             self._log_to_ui(f"   Errors: {len(errors)}")

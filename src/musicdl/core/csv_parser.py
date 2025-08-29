@@ -5,13 +5,12 @@ from __future__ import annotations
 import csv
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
 
-from .models import CSVDetection, TrackItem
 from ..utils.file_utils import detect_csv_encoding_and_content, validate_file_path
+from .models import CSVDetection, TrackItem
 
 # Synonyms for artist column detection
-ARTIST_SYNONYMS: Set[str] = {
+ARTIST_SYNONYMS: set[str] = {
     "artist",
     "artists",
     "primary artist",
@@ -31,7 +30,7 @@ ARTIST_SYNONYMS: Set[str] = {
 }
 
 # Synonyms for track column detection
-TRACK_SYNONYMS: Set[str] = {
+TRACK_SYNONYMS: set[str] = {
     "track",
     "track name",
     "song",
@@ -46,7 +45,7 @@ TRACK_SYNONYMS: Set[str] = {
 }
 
 # Separators for parsing single artist-title columns
-SEPARATORS: List[str] = [" - ", " — ", " – ", "-", "—", "–", ":", "|", "·"]
+SEPARATORS: list[str] = [" - ", " — ", " – ", "-", "—", "–", ":", "|", "·"]
 
 
 class CSVParsingError(Exception):
@@ -64,19 +63,21 @@ class CSVParser:
         self.max_preview_rows = max_preview_rows
         self.sample_bytes = sample_bytes
 
-    def sniff_csv(self, path: Path) -> Tuple[bool, csv.Dialect, str]:
+    def sniff_csv(self, path: Path) -> tuple[bool, csv.Dialect, str]:
         """Detect CSV format and encoding."""
         # Validate file path for security
         if not validate_file_path(path, must_exist=True):
             raise CSVParsingError(f"Invalid or unsafe file path: {path}")
-        
+
         # Use consolidated encoding detection
         try:
             encoding, buf = detect_csv_encoding_and_content(path, self.sample_bytes)
-        except (OSError, IOError, UnicodeError) as e:
+        except (OSError, UnicodeError) as e:
             raise CSVParsingError(f"Failed to read or decode file: {e}") from e
         except Exception as e:
-            raise CSVParsingError(f"Unexpected error detecting file encoding: {e}") from e
+            raise CSVParsingError(
+                f"Unexpected error detecting file encoding: {e}"
+            ) from e
 
         sniffer = csv.Sniffer()
 
@@ -114,8 +115,8 @@ class CSVParser:
         except Exception as e:
             raise CSVParsingError(f"Failed to analyze CSV format: {e}") from e
 
-        headers: List[str] = []
-        rows: List[Dict[str, str]] = []
+        headers: list[str] = []
+        rows: list[dict[str, str]] = []
 
         try:
             with path.open("r", encoding=encoding, newline="") as f:
@@ -129,10 +130,13 @@ class CSVParser:
                     try:
                         first_row = next(plain_reader)
                         headers = [f"col_{i + 1}" for i in range(len(first_row))]
-                        rows.append({h: v for h, v in zip(headers, first_row)})
-                        reader = (dict(zip(headers, row)) for row in plain_reader)
+                        rows.append(dict(zip(headers, first_row, strict=False)))
+                        reader = (
+                            dict(zip(headers, row, strict=False))
+                            for row in plain_reader
+                        )
                     except StopIteration:
-                        raise CSVParsingError("CSV file appears to be empty")
+                        raise CSVParsingError("CSV file appears to be empty") from None
 
                 # Load preview rows
                 for i, record in enumerate(reader):
@@ -166,12 +170,12 @@ class CSVParser:
         )
 
     def _detect_columns(
-        self, headers: List[str], rows: List[Dict[str, str]]
-    ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        self, headers: list[str], rows: list[dict[str, str]]
+    ) -> tuple[str | None, str | None, str | None]:
         """Detect the best artist and track columns."""
 
         # Score headers based on synonyms
-        def score_header(name: str, synonyms: Set[str]) -> int:
+        def score_header(name: str, synonyms: set[str]) -> int:
             name_lower = name.strip().lower()
             score = 0
 
@@ -248,8 +252,8 @@ class CSVParser:
         return best_artist_col, best_track_col, None
 
     def _detect_single_column(
-        self, headers: List[str], rows: List[Dict[str, str]]
-    ) -> Optional[str]:
+        self, headers: list[str], rows: list[dict[str, str]]
+    ) -> str | None:
         """Detect single column with 'Artist - Title' pattern."""
 
         best_column = None
@@ -273,7 +277,7 @@ class CSVParser:
 
         return best_column
 
-    def parse_artist_title_from_single(self, value: str) -> Tuple[str, str]:
+    def parse_artist_title_from_single(self, value: str) -> tuple[str, str]:
         """Parse artist and title from single column value."""
         value = (value or "").strip()
 
@@ -298,12 +302,12 @@ class CSVParser:
     def build_track_items(
         self,
         detection: CSVDetection,
-        artist_col_override: Optional[str] = None,
-        track_col_override: Optional[str] = None,
-    ) -> List[TrackItem]:
+        artist_col_override: str | None = None,
+        track_col_override: str | None = None,
+    ) -> list[TrackItem]:
         """Build track items from CSV detection results."""
 
-        tracks: List[TrackItem] = []
+        tracks: list[TrackItem] = []
 
         # Use overrides if provided
         artist_col = artist_col_override or detection.artist_col

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from platformdirs import user_config_dir, user_data_dir
 from pydantic import ValidationError
@@ -24,9 +24,9 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 class ConfigManager:
     """Manages application configuration."""
 
-    def __init__(self, config_path: Optional[Path] = None) -> None:
+    def __init__(self, config_path: Path | None = None) -> None:
         self.config_path = config_path or CONFIG_FILE
-        self._config: Optional[AppConfig] = None
+        self._config: AppConfig | None = None
 
     def load(self) -> AppConfig:
         """Load configuration from file or create default."""
@@ -53,7 +53,7 @@ class ConfigManager:
 
         return self._config
 
-    def save(self, config: Optional[AppConfig] = None) -> None:
+    def save(self, config: AppConfig | None = None) -> None:
         """Save configuration to file."""
         if config is not None:
             self._config = config
@@ -75,7 +75,7 @@ class ConfigManager:
             self.config_path.write_text(json.dumps(config_dict, indent=2))
             logger.info(f"Saved configuration to {self.config_path}")
 
-        except (OSError, IOError) as e:
+        except OSError as e:
             logger.error(f"Failed to write config file: {e}")
         except (TypeError, ValueError) as e:
             logger.error(f"Failed to serialize config: {e}")
@@ -106,7 +106,7 @@ class ConfigManager:
 
         return AppConfig(**resolved_data)
 
-    def _serialize_paths(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    def _serialize_paths(self, config_dict: dict[str, Any]) -> dict[str, Any]:
         """Convert Path objects to strings for JSON serialization."""
 
         serialized = {}
@@ -122,13 +122,13 @@ class ConfigManager:
         return serialized
 
 
-def load_config(config_path: Optional[Path] = None) -> AppConfig:
+def load_config(config_path: Path | None = None) -> AppConfig:
     """Load configuration (convenience function)."""
     manager = ConfigManager(config_path)
     return manager.load()
 
 
-def save_config(config: AppConfig, config_path: Optional[Path] = None) -> None:
+def save_config(config: AppConfig, config_path: Path | None = None) -> None:
     """Save configuration (convenience function)."""
     manager = ConfigManager(config_path)
     manager.save(config)

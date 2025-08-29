@@ -6,7 +6,6 @@ import json
 import logging
 import threading
 from pathlib import Path
-from typing import List, Optional
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -26,7 +25,7 @@ from textual.widgets import (
 
 from ..config import ConfigManager
 from ..core import CSVDetection, CSVParser, TrackItem, YTDLPDownloader
-from ..core.models import AppConfig, TrackStatus
+from ..core.models import TrackStatus
 from ..utils.logging import TUILogHandler, add_tui_handler, remove_tui_handler
 from .components import HelpPanel, LogPanel, ProgressDisplay, StatusDisplay
 from .styles import APP_CSS
@@ -55,7 +54,7 @@ class MusicDownloaderApp(App[None]):
     is_running = reactive(False, layout=False)
     current_status = reactive("Ready", layout=False)
 
-    def __init__(self, config_path: Optional[Path] = None, **kwargs) -> None:
+    def __init__(self, config_path: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
 
         # Load configuration
@@ -64,19 +63,19 @@ class MusicDownloaderApp(App[None]):
 
         # Initialize components
         self.csv_parser = CSVParser()
-        self.downloader: Optional[YTDLPDownloader] = None
+        self.downloader: YTDLPDownloader | None = None
 
         # State
-        self.csv_detection: Optional[CSVDetection] = None
-        self.track_items: List[TrackItem] = []
-        self.worker_thread: Optional[threading.Thread] = None
-        self.tui_log_handler: Optional[TUILogHandler] = None
+        self.csv_detection: CSVDetection | None = None
+        self.track_items: list[TrackItem] = []
+        self.worker_thread: threading.Thread | None = None
+        self.tui_log_handler: TUILogHandler | None = None
 
         # UI components (will be set in compose)
-        self.csv_table: Optional[DataTable] = None
-        self.progress_display: Optional[ProgressDisplay] = None
-        self.status_display: Optional[StatusDisplay] = None
-        self.log_panel: Optional[LogPanel] = None
+        self.csv_table: DataTable | None = None
+        self.progress_display: ProgressDisplay | None = None
+        self.status_display: StatusDisplay | None = None
+        self.log_panel: LogPanel | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
@@ -100,13 +99,17 @@ class MusicDownloaderApp(App[None]):
             with Horizontal(id="controls"):
                 yield Label("Artist:", classes="control-label")
                 yield Select(
+                    options=[],
                     prompt="Auto Detect",
                     id="artist-select",
                     classes="column-select",
                 )
                 yield Label("Track:", classes="control-label")
                 yield Select(
-                    prompt="Auto Detect", id="track-select", classes="column-select"
+                    options=[],
+                    prompt="Auto Detect", 
+                    id="track-select", 
+                    classes="column-select"
                 )
                 yield Button("Reload", id="reload-btn")
                 yield Button("Export", id="export-btn", disabled=True)
@@ -150,6 +153,9 @@ class MusicDownloaderApp(App[None]):
         self.downloader = YTDLPDownloader(
             config=self.config, progress_callback=self._log_to_ui
         )
+
+        # Auto-detect CSV files in root directory
+        self._auto_detect_csv()
 
         self._log_to_ui("MusicDL started - Load a CSV file to begin")
         self._update_status("Ready", "info")
@@ -302,6 +308,37 @@ class MusicDownloaderApp(App[None]):
 
     # Private methods
 
+    def _auto_detect_csv(self) -> None:
+        """Auto-detect CSV files in the application root directory."""
+        import os
+        
+        # Get the application root directory (where the script is run from)
+        root_dir = Path.cwd()
+        
+        # Look for CSV files in the root directory
+        csv_files = list(root_dir.glob("*.csv"))
+        
+        if csv_files:
+            # Prefer tracks.csv if it exists, otherwise use the first one found
+            preferred_file = None
+            for csv_file in csv_files:
+                if csv_file.name.lower() == "tracks.csv":
+                    preferred_file = csv_file
+                    break
+            
+            if not preferred_file:
+                preferred_file = csv_files[0]
+            
+            # Auto-load the detected CSV file
+            self.csv_path = str(preferred_file)
+            csv_input = self.query_one("#csv-input", Input)
+            csv_input.value = self.csv_path
+            
+            self._log_to_ui(f"Auto-detected CSV file: {preferred_file.name}")
+            
+            # Automatically scan the CSV file
+            self.call_later(self.action_scan_csv)
+
     def _populate_csv_table(self) -> None:
         """Populate the CSV preview table."""
         if not self.csv_detection or not self.csv_table:
@@ -411,7 +448,6 @@ class MusicDownloaderApp(App[None]):
                 break
 
             # Update progress
-            mode = "search" if self.dry_run_mode else "download"
             self.call_from_thread(
                 self._update_progress,
                 completed,
@@ -503,7 +539,7 @@ class MusicDownloaderApp(App[None]):
             self.log_panel.log_info(message)
 
 
-def run_app(config_path: Optional[Path] = None) -> None:
+def run_app(config_path: Path | None = None) -> None:
     """Run the MusicDL TUI application."""
     app = MusicDownloaderApp(config_path=config_path)
     app.run()

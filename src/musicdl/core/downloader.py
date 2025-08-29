@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 import re
 import shutil
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 import imageio_ffmpeg
 from yt_dlp import YoutubeDL
-from yt_dlp.utils import sanitize_filename, DownloadError as YTDLPDownloadError, ExtractorError
+from yt_dlp.utils import DownloadError as YTDLPDownloadError
+from yt_dlp.utils import ExtractorError, sanitize_filename
 
 from .models import AppConfig, DownloadResult, SearchResult, TrackItem, TrackStatus
 
@@ -27,7 +28,7 @@ class YTDLPDownloader:
     def __init__(
         self,
         config: AppConfig,
-        progress_callback: Optional[Callable[[str], None]] = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> None:
         self.config = config
         self.progress_callback = progress_callback
@@ -38,9 +39,7 @@ class YTDLPDownloader:
 
     def _get_ffmpeg_path(self) -> str:
         """Get ffmpeg executable path with security validation."""
-        import os
-        import stat
-        
+
         try:
             # Try imageio-ffmpeg first (bundled binary)
             ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
@@ -50,41 +49,41 @@ class YTDLPDownloader:
             if not ffmpeg_path:
                 logger.warning("ffmpeg not found - downloads may fail")
                 return "ffmpeg"  # Let yt-dlp try to find it
-        
+
         # Validate the ffmpeg path for security
         if self._validate_ffmpeg_executable(ffmpeg_path):
             return ffmpeg_path
         else:
             logger.warning(f"FFmpeg executable validation failed: {ffmpeg_path}")
             return "ffmpeg"  # Let yt-dlp try to find it
-    
+
     def _validate_ffmpeg_executable(self, path: str) -> bool:
         """Validate that the ffmpeg executable is safe to use."""
         import os
         import stat
-        
+
         try:
             # Check if file exists and is a regular file
             if not os.path.isfile(path):
                 return False
-            
+
             # Check file permissions - must be executable
             file_stat = os.stat(path)
             if not (file_stat.st_mode & stat.S_IEXEC):
                 return False
-            
+
             # Prevent path traversal in executable path
             normalized_path = os.path.normpath(os.path.abspath(path))
-            if '..' in normalized_path or normalized_path != path:
+            if ".." in normalized_path or normalized_path != path:
                 return False
-            
+
             # Basic filename validation (should contain 'ffmpeg')
             filename = os.path.basename(path).lower()
-            if 'ffmpeg' not in filename:
+            if "ffmpeg" not in filename:
                 return False
-                
+
             return True
-            
+
         except (OSError, ValueError) as e:
             logger.warning(f"Error validating ffmpeg path {path}: {e}")
             return False
@@ -98,10 +97,10 @@ class YTDLPDownloader:
     def _sanitize_filename(self, filename: str) -> str:
         """Create safe filename from input string, preventing path traversal."""
         import os
-        
+
         # Remove any path components to prevent directory traversal
         filename = os.path.basename(filename)
-        
+
         # Use yt-dlp's sanitizer first
         safe = sanitize_filename(filename, restricted=True)
 
@@ -110,20 +109,41 @@ class YTDLPDownloader:
         safe = safe.strip("_ .")
 
         # Prevent path traversal attempts and hidden files
-        if '..' in safe or safe.startswith('.') or '~' in safe:
+        if ".." in safe or safe.startswith(".") or "~" in safe:
             safe = "audio"
-        
+
         # Ensure not empty and not reserved names
-        reserved_names = {"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", 
-                         "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", 
-                         "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}
+        reserved_names = {
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "COM3",
+            "COM4",
+            "COM5",
+            "COM6",
+            "COM7",
+            "COM8",
+            "COM9",
+            "LPT1",
+            "LPT2",
+            "LPT3",
+            "LPT4",
+            "LPT5",
+            "LPT6",
+            "LPT7",
+            "LPT8",
+            "LPT9",
+        }
         if not safe or safe.upper() in reserved_names:
             safe = "audio"
-            
+
         # Limit length to prevent filesystem issues
         return safe[:255] if safe else "audio"
 
-    def search_track(self, track: TrackItem) -> Optional[SearchResult]:
+    def search_track(self, track: TrackItem) -> SearchResult | None:
         """Search for a track on YouTube."""
         track.status = TrackStatus.SEARCHING
         self._log(f"[search] {track.query}")
@@ -158,7 +178,7 @@ class YTDLPDownloader:
         except (YTDLPDownloadError, ExtractorError) as e:
             logger.error(f"YouTube search failed for {track.query}: {e}")
             return None
-        except (OSError, IOError) as e:
+        except OSError as e:
             logger.error(f"Network/IO error searching for {track.query}: {e}")
             return None
         except Exception as e:
@@ -190,13 +210,9 @@ class YTDLPDownloader:
         # Proceed with download
         track.status = TrackStatus.DOWNLOADING
 
-        # Generate output filename
-        base_name = f"{track.artist} - {track.title}".strip(" -")
-        if not base_name:
-            base_name = track.title or track.artist or "audio"
-
-        safe_filename = self._sanitize_filename(base_name)
-        output_template = str(self.config.music_dir / f"{safe_filename}.%(ext)s")
+        # Use a placeholder filename - we'll get the actual title from YouTube
+        safe_filename = self._sanitize_filename(f"{track.artist} - {track.title}")
+        output_template = str(self.config.music_dir / "%(title)s.%(ext)s")
 
         ydl_opts = {
             "quiet": True,
@@ -210,11 +226,17 @@ class YTDLPDownloader:
             "ignoreerrors": False,
             "writeinfojson": self.config.write_info_json,
             "writethumbnail": self.config.write_thumbnail,
-            # Audio post-processing
+            # Speed optimizations
+            "concurrent_fragment_downloads": 4,
+            "fragment_retries": 3,
+            "retries": 3,
+            "socket_timeout": 30,
+            "http_chunk_size": 1048576,  # 1MB chunks
+            # Audio post-processing - prefer Opus format
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
-                    "preferredcodec": "best",
+                    "preferredcodec": "opus",
                     "preferredquality": "0",  # Best available
                 },
                 {
@@ -238,10 +260,25 @@ class YTDLPDownloader:
                 if not info:
                     raise DownloadError("No video information retrieved")
 
-                # Find the downloaded file
-                downloaded_files = list(
-                    self.config.music_dir.glob(f"{safe_filename}.*")
-                )
+                # Find the downloaded file by looking for the actual video title
+                video_title = info.get("title", "")
+                safe_video_title = self._sanitize_filename(video_title) if video_title else safe_filename
+                
+                # Try to find the file with the video title first, then fallback to pattern matching
+                downloaded_files = list(self.config.music_dir.glob(f"{safe_video_title}.*"))
+                
+                if not downloaded_files:
+                    # Fallback: search for any recent files in the directory
+                    import time
+                    recent_files = []
+                    current_time = time.time()
+                    for file_path in self.config.music_dir.iterdir():
+                        if file_path.is_file() and (current_time - file_path.stat().st_mtime) < 60:  # Files modified in last minute
+                            recent_files.append(file_path)
+                    
+                    if recent_files:
+                        # Use the most recently modified file
+                        downloaded_files = [max(recent_files, key=lambda f: f.stat().st_mtime)]
 
                 if not downloaded_files:
                     raise DownloadError("Downloaded file not found")
@@ -274,7 +311,7 @@ class YTDLPDownloader:
             track.error = error_msg
             self._log(f"[error] {track.display_name}: {error_msg}")
             return DownloadResult(success=False, error_message=error_msg)
-        except (OSError, IOError) as e:
+        except OSError as e:
             error_msg = f"File/Network error during download: {e}"
             track.status = TrackStatus.ERROR
             track.error = error_msg
@@ -289,13 +326,13 @@ class YTDLPDownloader:
 
     def download_multiple(
         self,
-        tracks: List[TrackItem],
+        tracks: list[TrackItem],
         dry_run: bool = False,
-        progress_callback: Optional[Callable[[int, int, TrackItem], None]] = None,
-    ) -> List[DownloadResult]:
+        progress_callback: Callable[[int, int, TrackItem], None] | None = None,
+    ) -> list[DownloadResult]:
         """Download multiple tracks sequentially."""
 
-        results: List[DownloadResult] = []
+        results: list[DownloadResult] = []
 
         for i, track in enumerate(tracks):
             # Check for cancellation point here if needed
@@ -310,45 +347,49 @@ class YTDLPDownloader:
 
     def download_multiple_concurrent(
         self,
-        tracks: List[TrackItem],
+        tracks: list[TrackItem],
         dry_run: bool = False,
-        progress_callback: Optional[Callable[[int, int, TrackItem], None]] = None,
-        max_workers: int = 3,
-    ) -> List[DownloadResult]:
+        progress_callback: Callable[[int, int, TrackItem], None] | None = None,
+        max_workers: int | None = None,
+    ) -> list[DownloadResult]:
         """Download multiple tracks concurrently with controlled parallelism."""
         import concurrent.futures
         import threading
-        
+
+        # Use config setting if not specified
+        if max_workers is None:
+            max_workers = self.config.max_concurrent_downloads
+            
         if max_workers < 1:
             max_workers = 1
         elif max_workers > 5:  # Limit to prevent overwhelming YouTube
             max_workers = 5
 
-        results: List[DownloadResult] = []
+        results: list[DownloadResult] = []
         completed_count = 0
         lock = threading.Lock()
 
         def download_with_callback(track: TrackItem) -> DownloadResult:
             """Download single track and update progress."""
             nonlocal completed_count
-            
+
             result = self.download_track(track, dry_run=dry_run)
-            
+
             with lock:
                 completed_count += 1
                 if progress_callback:
                     progress_callback(completed_count, len(tracks), track)
-            
+
             return result
 
         # Use ThreadPoolExecutor for I/O bound downloads
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all download tasks
             future_to_track = {
-                executor.submit(download_with_callback, track): track 
+                executor.submit(download_with_callback, track): track
                 for track in tracks
             }
-            
+
             # Collect results as they complete
             track_results = {}
             for future in concurrent.futures.as_completed(future_to_track):
@@ -359,8 +400,8 @@ class YTDLPDownloader:
                 except Exception as e:
                     # Create error result for failed downloads
                     error_result = DownloadResult(
-                        success=False, 
-                        error_message=f"Concurrent download failed: {str(e)}"
+                        success=False,
+                        error_message=f"Concurrent download failed: {str(e)}",
                     )
                     track.status = TrackStatus.ERROR
                     track.error = str(e)
@@ -371,7 +412,7 @@ class YTDLPDownloader:
 
         return results
 
-    def get_video_info(self, url: str) -> Optional[Dict[str, Any]]:
+    def get_video_info(self, url: str) -> dict[str, Any] | None:
         """Get video information without downloading."""
 
         ydl_opts = {

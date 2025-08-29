@@ -5,10 +5,9 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import List, Optional, Set
 
-from .models import TrackItem
 from ..utils.file_utils import read_text_file_safe, validate_file_path
+from .models import TrackItem
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ class URLProcessor:
 
         return False
 
-    def extract_video_id(self, url: str) -> Optional[str]:
+    def extract_video_id(self, url: str) -> str | None:
         """Extract video ID from YouTube URL."""
         url = url.strip()
 
@@ -58,7 +57,7 @@ class URLProcessor:
 
         return None
 
-    def normalize_youtube_url(self, url: str) -> Optional[str]:
+    def normalize_youtube_url(self, url: str) -> str | None:
         """Normalize YouTube URL to standard format."""
         video_id = self.extract_video_id(url)
         if not video_id:
@@ -67,8 +66,8 @@ class URLProcessor:
         return f"https://www.youtube.com/watch?v={video_id}"
 
     def create_track_from_url(
-        self, url: str, title_override: Optional[str] = None
-    ) -> Optional[TrackItem]:
+        self, url: str, title_override: str | None = None
+    ) -> TrackItem | None:
         """Create a TrackItem from a YouTube URL."""
 
         if not self.is_valid_youtube_url(url):
@@ -91,7 +90,7 @@ class URLProcessor:
             url=normalized_url,
         )
 
-    def _extract_title_from_url(self, url: str) -> Optional[str]:
+    def _extract_title_from_url(self, url: str) -> str | None:
         """Try to extract title from URL query parameters."""
         # This is a basic implementation - in practice, we'd need to
         # fetch the actual video title from YouTube
@@ -108,7 +107,7 @@ class URLProcessor:
 
         return None
 
-    def load_urls_from_text_file(self, file_path: Path) -> List[TrackItem]:
+    def load_urls_from_text_file(self, file_path: Path) -> list[TrackItem]:
         """Load YouTube URLs from a text file."""
 
         if not file_path.exists():
@@ -117,8 +116,8 @@ class URLProcessor:
         if not file_path.is_file():
             raise URLParsingError(f"Path is not a file: {file_path}")
 
-        tracks: List[TrackItem] = []
-        seen_urls: Set[str] = set()
+        tracks: list[TrackItem] = []
+        seen_urls: set[str] = set()
 
         # Validate file path for security
         if not validate_file_path(file_path, must_exist=True):
@@ -130,7 +129,7 @@ class URLProcessor:
 
             lines = content.strip().split("\n")
 
-        except (OSError, IOError, UnicodeError) as e:
+        except (OSError, UnicodeError) as e:
             raise URLParsingError(f"Failed to read or decode text file: {e}") from e
         except Exception as e:
             raise URLParsingError(f"Unexpected error reading text file: {e}") from e
@@ -176,7 +175,7 @@ class URLProcessor:
         logger.info(f"Loaded {len(tracks)} valid URLs from {file_path}")
         return tracks
 
-    def validate_text_file(self, file_path: Path) -> tuple[int, int, List[str]]:
+    def validate_text_file(self, file_path: Path) -> tuple[int, int, list[str]]:
         """Validate text file and return statistics.
 
         Returns:
@@ -186,7 +185,7 @@ class URLProcessor:
         if not file_path.exists():
             return 0, 0, ["File not found"]
 
-        errors: List[str] = []
+        errors: list[str] = []
         valid_urls = 0
         total_lines = 0
 
@@ -229,7 +228,7 @@ class URLProcessor:
         """Check if URL is a YouTube playlist URL."""
         return "playlist" in url.lower() and "list=" in url
 
-    def extract_playlist_id(self, url: str) -> Optional[str]:
+    def extract_playlist_id(self, url: str) -> str | None:
         """Extract playlist ID from YouTube playlist URL."""
         match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
         return match.group(1) if match else None

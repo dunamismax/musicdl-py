@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from textual.reactive import reactive
 from textual.widgets import Label, ProgressBar, Static
 
@@ -47,8 +45,8 @@ class ProgressDisplay(Static):
     def __init__(self, total: int = 100, **kwargs) -> None:
         super().__init__(**kwargs)
         self.total = total
-        self.progress_bar: Optional[ProgressBar] = None
-        self.progress_label: Optional[Label] = None
+        self.progress_bar: ProgressBar | None = None
+        self.progress_label: Label | None = None
 
     def compose(self):
         """Compose the progress display."""
@@ -99,7 +97,7 @@ class CSVPreviewTable(Static):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.data_table: Optional[DataTable] = None
+        self.data_table = None
 
     def compose(self):
         """Compose the CSV preview table."""
@@ -149,13 +147,13 @@ class LogPanel(Static):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.log_widget: Optional[Log] = None
+        self.log_widget = None
 
     def compose(self):
         """Compose the log panel."""
-        from textual.widgets import Log
+        from textual.widgets import RichLog
 
-        self.log_widget = Log(
+        self.log_widget = RichLog(
             highlight=True,
             markup=True,
             wrap=True,
@@ -222,7 +220,7 @@ class HelpPanel(Static):
 
 1. **Load CSV**: Enter path to your CSV file and click **Scan**
 2. **Verify Columns**: Check detected Artist/Track columns (adjust if needed)
-3. **Choose Mode**: Toggle **Dry Run** to search without downloading  
+3. **Choose Mode**: Toggle **Dry Run** to search without downloading
 4. **Start Download**: Click **Start** to begin processing
 
 ## Keyboard Shortcuts
@@ -230,7 +228,7 @@ class HelpPanel(Static):
 - `Ctrl+O` - Focus CSV path input
 - `Ctrl+S` - Scan CSV file
 - `Ctrl+R` - Start downloads
-- `Ctrl+C` - Stop downloads  
+- `Ctrl+C` - Stop downloads
 - `Ctrl+D` - Toggle dry run mode
 - `Ctrl+Q` - Quit application
 

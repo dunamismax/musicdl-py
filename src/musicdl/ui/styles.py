@@ -165,7 +165,7 @@ Screen {
 
 #download-indicator {
     background: $success;
-    color: $text; 
+    color: $text;
     text-style: bold;
 }
 
@@ -185,7 +185,7 @@ Screen {
 }
 
 .info-text {
-    color: $info;
+    color: $primary;
 }
 
 .highlight-row {

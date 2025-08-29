@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Optional
 
 from textual.app import ComposeResult
 from textual.containers import Center, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Header, Label, OptionList, Select
+from textual.widgets import Button, Label, OptionList, Select
 from textual.widgets.option_list import Option
 
 from ..core.models import AppConfig
@@ -24,7 +23,7 @@ class FormatSelectionScreen(ModalScreen[tuple[str, str]]):
     FormatSelectionScreen {
         align: center middle;
     }
-    
+
     #dialog {
         grid-size: 1 8;
         grid-gutter: 1;
@@ -35,29 +34,29 @@ class FormatSelectionScreen(ModalScreen[tuple[str, str]]):
         border: thick $background 80%;
         background: $surface;
     }
-    
+
     #title {
         content-align: center middle;
         height: 3;
     }
-    
+
     .section-label {
         height: 1;
         content-align: left middle;
         text-style: bold;
     }
-    
+
     #format-select, #bitrate-select {
         height: 3;
         margin: 0 1;
     }
-    
+
     #buttons {
         layout: horizontal;
         height: 3;
         align: center middle;
     }
-    
+
     #buttons Button {
         margin: 0 1;
     }
@@ -110,7 +109,7 @@ class FormatSelectionScreen(ModalScreen[tuple[str, str]]):
     def on_mount(self) -> None:
         """Set initial values based on current format."""
         format_select = self.query_one("#format-select", Select)
-        bitrate_select = self.query_one("#bitrate-select", Select)
+        self.query_one("#bitrate-select", Select)
 
         # Parse current format to set defaults
         if "/" in self.current_format:
@@ -154,33 +153,33 @@ class MainMenuScreen(ModalScreen[str]):
         align: center middle;
         background: $surface;
     }
-    
+
     #menu-container {
         width: 80;
         height: 20;
         border: thick $primary 80%;
         padding: 2;
     }
-    
+
     #title {
         height: 3;
         content-align: center middle;
         text-style: bold;
         color: $primary;
     }
-    
+
     #subtitle {
         height: 2;
         content-align: center middle;
         color: $text-muted;
         margin-bottom: 1;
     }
-    
+
     #options {
         height: 10;
         border: solid $border;
     }
-    
+
     #footer-text {
         height: 2;
         content-align: center middle;
@@ -205,7 +204,9 @@ class MainMenuScreen(ModalScreen[str]):
                 id="options",
             )
 
-            yield Label("Use Up/Down arrows to navigate, Enter to select", id="footer-text")
+            yield Label(
+                "Use Up/Down arrows to navigate, Enter to select", id="footer-text"
+            )
 
     def on_mount(self) -> None:
         """Focus the options list when mounted."""
@@ -217,14 +218,14 @@ class MainMenuScreen(ModalScreen[str]):
             self.dismiss(event.option.id)
 
 
-class SettingsScreen(ModalScreen[Optional[AppConfig]]):
+class SettingsScreen(ModalScreen[AppConfig | None]):
     """Settings configuration screen."""
 
     CSS = """
     SettingsScreen {
         align: center middle;
     }
-    
+
     #settings-dialog {
         width: 70;
         height: 25;
@@ -232,7 +233,7 @@ class SettingsScreen(ModalScreen[Optional[AppConfig]]):
         padding: 2;
         background: $surface;
     }
-    
+
     #settings-title {
         height: 2;
         content-align: center middle;
@@ -240,31 +241,31 @@ class SettingsScreen(ModalScreen[Optional[AppConfig]]):
         color: $primary;
         margin-bottom: 1;
     }
-    
+
     .setting-section {
         height: 3;
         margin-bottom: 1;
     }
-    
+
     .setting-label {
         height: 1;
         text-style: bold;
         color: $text;
     }
-    
+
     .current-value {
         height: 1;
         color: $text-muted;
         text-style: italic;
     }
-    
+
     #buttons {
         layout: horizontal;
         height: 3;
         align: center middle;
         margin-top: 2;
     }
-    
+
     #buttons Button {
         margin: 0 1;
     }

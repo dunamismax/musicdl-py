@@ -6,7 +6,6 @@ import csv
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -33,13 +32,13 @@ class AppConfig(BaseModel):
     )
 
     # Directories
-    music_dir: Path = Path("Music")
+    music_dir: Path = Path("~/Downloads/MusicDL Downloads").expanduser()
     cache_dir: Path = Path(".cache")
     logs_dir: Path = Path("logs")
 
     # Download settings
-    max_concurrent_downloads: int = 1
-    audio_format: str = "bestaudio/best"
+    max_concurrent_downloads: int = 3
+    audio_format: str = "bestaudio[ext=webm][acodec=opus]/bestaudio/best"
     bitrate: str = "best"
     output_template: str = "{artist} - {title}.%(ext)s"
     overwrite_files: bool = True
@@ -53,7 +52,7 @@ class AppConfig(BaseModel):
     theme: str = "dark"
 
     # Advanced settings
-    user_agent: Optional[str] = None
+    user_agent: str | None = None
     extract_flat: bool = False
     write_info_json: bool = False
     write_thumbnail: bool = False
@@ -69,12 +68,12 @@ class AppConfig(BaseModel):
 class CSVDetection:
     """Result of CSV file analysis."""
 
-    headers: List[str]
-    artist_col: Optional[str]
-    track_col: Optional[str]
-    single_title_col: Optional[str]
+    headers: list[str]
+    artist_col: str | None
+    track_col: str | None
+    single_title_col: str | None
     dialect: csv.Dialect
-    preview_rows: List[Dict[str, str]]
+    preview_rows: list[dict[str, str]]
     encoding: str = "utf-8-sig"
 
     @property
@@ -97,11 +96,11 @@ class TrackItem:
     query: str
     target_stub: str  # Filename without extension
     status: TrackStatus = TrackStatus.PENDING
-    url: Optional[str] = None
-    result_path: Optional[str] = None
-    error: Optional[str] = None
-    duration: Optional[float] = None
-    filesize: Optional[int] = None
+    url: str | None = None
+    result_path: str | None = None
+    error: str | None = None
+    duration: float | None = None
+    filesize: int | None = None
 
     @property
     def display_name(self) -> str:
@@ -110,7 +109,7 @@ class TrackItem:
             return f"{self.artist} - {self.title}"
         return self.title or self.artist or "Unknown"
 
-    def to_dict(self) -> Dict[str, Optional[str | float | int]]:
+    def to_dict(self) -> dict[str, str | float | int | None]:
         """Convert to dictionary for JSON serialization."""
         return {
             "artist": self.artist,
@@ -132,11 +131,11 @@ class SearchResult(BaseModel):
 
     title: str
     url: str
-    duration: Optional[float] = None
-    uploader: Optional[str] = None
-    view_count: Optional[int] = None
-    like_count: Optional[int] = None
-    upload_date: Optional[str] = None
+    duration: float | None = None
+    uploader: str | None = None
+    view_count: int | None = None
+    like_count: int | None = None
+    upload_date: str | None = None
 
 
 class DownloadResult(BaseModel):
@@ -145,8 +144,8 @@ class DownloadResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     success: bool
-    file_path: Optional[Path] = None
-    error_message: Optional[str] = None
-    duration: Optional[float] = None
-    filesize: Optional[int] = None
-    format_info: Optional[Dict[str, str]] = None
+    file_path: Path | None = None
+    error_message: str | None = None
+    duration: float | None = None
+    filesize: int | None = None
+    format_info: dict[str, str] | None = None

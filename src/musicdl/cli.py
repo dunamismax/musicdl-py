@@ -6,7 +6,6 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 from . import PROJECT_ROOT, __version__
 from .config import load_config
